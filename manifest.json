@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Gmail OTP Finder",
+  "version": "0.1.0",
+  "description": "Prototype: fetch recent OTP codes from your Gmail and show them in a popup.",
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Show recent OTPs"
+  },
+  "permissions": ["identity", "storage"],
+  "host_permissions": [
+    "https://www.googleapis.com/*",
+    "https://accounts.google.com/*"
+  ],
+  "background": {
+    "service_worker": "background/service_worker.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://www.googleapis.com https://accounts.google.com"
+  }
+}
+
