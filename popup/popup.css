@@ -1,0 +1,23 @@
+:root { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+body { margin: 0; min-width: 320px; max-width: 420px; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #eee; }
+h1 { font-size: 16px; margin: 0; }
+#refresh { border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+#loading { padding: 16px; text-align: center; }
+.spinner::after {
+  content: "";
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid #ccc; border-top-color: #333; border-radius: 50%;
+  margin-left: 8px; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error { color: #b00020; padding: 12px; }
+.empty { padding: 12px; color: #666; }
+ul { list-style: none; margin: 0; padding: 8px; }
+.li { display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 10px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 8px; }
+.code { font-weight: 700; font-size: 18px; }
+.meta { font-size: 12px; color: #555; }
+.copy { border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.small { font-size: 11px; color: #888; }
+
