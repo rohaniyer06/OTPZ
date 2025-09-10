@@ -78,7 +78,7 @@ async function gmailRequest(token, path, params = {}) {
  */
 export async function fetchOtpsFromGmail(token) {
   // Gmail search query: unread, recent, with likely OTP keywords
-  const q = `is:unread newer_than:3h (OTP OR "one-time password" OR "verification code" OR passcode OR code)`;
+  const q = `is:unread newer_than:0.17h (OTP OR "one-time password" OR "verification code" OR passcode OR code)`;
   const list = await gmailRequest(token, "users/me/messages", {
     q,
     maxResults: "15"
