@@ -44,12 +44,31 @@ function render(otps) {
     try {
       await navigator.clipboard.writeText(code);
       btn.textContent = "Copied!";
-      setTimeout(() => (btn.textContent = "Copy"), 1200);
+      
+      // Notify the service worker that this OTP was copied
+      try {
+        await chrome.runtime.sendMessage({ 
+          type: "OTP_COPIED", 
+          code: code 
+        });
+      } catch (e) {
+        console.error('Failed to mark OTP as copied:', e);
+      }
+      
+      // Remove the OTP from the UI after a short delay
+      setTimeout(() => {
+        const item = btn.closest('.li');
+        if (item) {
+          item.style.opacity = '0';
+          setTimeout(() => item.remove(), 300);
+        }
+      }, 500);
+      
     } catch {
       btn.textContent = "Failed";
       setTimeout(() => (btn.textContent = "Copy"), 1200);
     }
-  }, { once: true });
+  });
 }
 
 async function loadOtps() {

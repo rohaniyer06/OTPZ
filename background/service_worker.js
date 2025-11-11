@@ -1,6 +1,10 @@
 // background/service_worker.js (MV3, module)
 import { fetchOtpsFromGmail } from "../services/gmail.js";
 
+// Storage keys
+const COPIED_OTPS_KEY = 'copiedOtps';
+const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes in milliseconds
+
 /* ---------- Auth helpers ---------- */
 
 // Silent attempt: resolve null on failure (do NOT throw) to avoid noisy errors.
@@ -77,8 +81,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "GET_OTPS") {
     (async () => {
       try {
-        const otps = await withGmailToken((token) => fetchOtpsFromGmail(token));
-        sendResponse({ ok: true, otps });
+        // Get fresh OTPs from Gmail
+        const freshOtps = await withGmailToken((token) => fetchOtpsFromGmail(token));
+        
+        // Get already copied OTPs from storage
+        const result = await chrome.storage.local.get(COPIED_OTPS_KEY);
+        const copiedOtps = new Set(result[COPIED_OTPS_KEY] || []);
+        const now = Date.now();
+        
+        // Filter OTPs: remove copied ones and those older than 10 minutes
+        const filteredOtps = freshOtps.filter(otp => 
+          !copiedOtps.has(otp.code) && 
+          (now - otp.dateMs) < OTP_TTL_MS
+        );
+        
+        // Add timestamp to each OTP
+        const otpsWithTimestamp = filteredOtps.map(otp => ({
+          ...otp,
+          timestamp: now
+        }));
+        
+        sendResponse({ ok: true, otps: otpsWithTimestamp });
       } catch (err) {
         if (err?.code === "auth_canceled") {
           // Graceful: tell popup the user canceled so it can show a friendly prompt
@@ -89,6 +112,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
     })();
     return true; // async
+  }
+
+  // Handle marking an OTP as copied
+  if (message?.type === "OTP_COPIED" && message?.code) {
+    (async () => {
+      try {
+        const result = await chrome.storage.local.get(COPIED_OTPS_KEY);
+        const copiedOtps = new Set(result[COPIED_OTPS_KEY] || []);
+        copiedOtps.add(message.code);
+        await chrome.storage.local.set({ [COPIED_OTPS_KEY]: Array.from(copiedOtps) });
+        sendResponse({ ok: true });
+      } catch (e) {
+        console.error('Failed to mark OTP as copied:', e);
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true; // Keep the message channel open for async response
   }
 
   // Optional: explicit "Sign in" action the popup can trigger to re-open consent
