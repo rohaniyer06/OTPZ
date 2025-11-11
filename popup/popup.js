@@ -30,7 +30,8 @@ function render(otps) {
         <div class="meta">${item.subject || "(no subject)"} <span class="small">• ${item.from || ""}</span></div>
         <div class="small">${formatDate(item.dateMs)}</div>
       </div>
-      <div>
+      <div class="actions">
+        <button class="autofill" data-code="${item.code}">Autofill</button>
         <button class="copy" data-code="${item.code}">Copy</button>
       </div>
     `;
@@ -38,35 +39,98 @@ function render(otps) {
   }
 
   list.addEventListener("click", async (e) => {
-    const btn = e.target.closest(".copy");
-    if (!btn) return;
-    const code = btn.dataset.code;
-    try {
-      await navigator.clipboard.writeText(code);
-      btn.textContent = "Copied!";
-      
-      // Notify the service worker that this OTP was copied
+    // Handle copy button click
+    if (e.target.closest(".copy")) {
+      const btn = e.target.closest(".copy");
+      const code = btn.dataset.code;
       try {
-        await chrome.runtime.sendMessage({ 
-          type: "OTP_COPIED", 
-          code: code 
-        });
-      } catch (e) {
-        console.error('Failed to mark OTP as copied:', e);
-      }
-      
-      // Remove the OTP from the UI after a short delay
-      setTimeout(() => {
-        const item = btn.closest('.li');
-        if (item) {
-          item.style.opacity = '0';
-          setTimeout(() => item.remove(), 300);
+        await navigator.clipboard.writeText(code);
+        btn.textContent = "Copied!";
+        
+        // Notify the service worker that this OTP was copied
+        try {
+          await chrome.runtime.sendMessage({ 
+            type: "OTP_COPIED", 
+            code: code 
+          });
+        } catch (e) {
+          console.error('Failed to mark OTP as copied:', e);
         }
-      }, 500);
+        
+        // Remove the OTP from the UI after a short delay
+        setTimeout(() => {
+          const item = btn.closest('.li');
+          if (item) {
+            item.style.opacity = '0';
+            setTimeout(() => item.remove(), 300);
+          }
+        }, 500);
+        
+      } catch {
+        btn.textContent = "Failed";
+        setTimeout(() => (btn.textContent = "Copy"), 1200);
+      }
+    }
+    // Handle autofill button click
+    else if (e.target.closest(".autofill")) {
+      const btn = e.target.closest(".autofill");
+      const code = btn.dataset.code;
+      const item = btn.closest('.li');
       
-    } catch {
-      btn.textContent = "Failed";
-      setTimeout(() => (btn.textContent = "Copy"), 1200);
+      btn.textContent = "Filling...";
+      btn.disabled = true;
+      
+      try {
+        // Get the active tab
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        
+        if (!tab || !tab.id) {
+          throw new Error('No active tab found');
+        }
+        
+        // Inject the content script and execute autofill
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content/autofill.js']
+        });
+        
+        // Send the OTP to the content script
+        const response = await chrome.tabs.sendMessage(tab.id, {
+          type: 'AUTOFILL_OTP',
+          otp: code
+        });
+        
+        if (response?.success) {
+          btn.textContent = "Filled!";
+          
+          // Notify the service worker that this OTP was used
+          try {
+            await chrome.runtime.sendMessage({ 
+              type: "OTP_COPIED", 
+              code: code 
+            });
+          } catch (e) {
+            console.error('Failed to mark OTP as used:', e);
+          }
+          
+          // Remove the OTP from the UI after a short delay
+          setTimeout(() => {
+            if (item) {
+              item.style.opacity = '0';
+              setTimeout(() => item.remove(), 300);
+            }
+          }, 500);
+        } else {
+          throw new Error(response?.message || 'Failed to autofill OTP');
+        }
+      } catch (error) {
+        console.error('Autofill error:', error);
+        btn.textContent = "Failed";
+        setTimeout(() => {
+          btn.textContent = "Autofill";
+          btn.disabled = false;
+        }, 1500);
+      }
     }
   });
 }

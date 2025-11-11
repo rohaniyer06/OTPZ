@@ -42,6 +42,51 @@ ul { list-style: none; margin: 0; padding: 8px; }
 .li { display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 10px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 8px; }
 .code { font-weight: 700; font-size: 18px; }
 .meta { font-size: 12px; color: #555; }
-.copy { border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.autofill {
+  border: 1px solid #4CAF50;
+  background: #4CAF50;
+  color: white;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.autofill:hover {
+  background: #45a049;
+  border-color: #45a049;
+}
+
+.autofill:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.copy { 
+  border: 1px solid #2196F3;
+  background: #2196F3;
+  color: white;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.copy:hover {
+  background: #0b7dda;
+  border-color: #0b7dda;
+}
+
+.copy:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
 .small { font-size: 11px; color: #888; }
 
