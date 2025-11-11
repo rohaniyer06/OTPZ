@@ -58,15 +58,38 @@ async function loadOtps() {
   empty.hidden = true;
   list.hidden = true;
 
-  chrome.runtime.sendMessage({ type: "GET_OTPS" }, (res) => {
+  try {
+    const res = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: "GET_OTPS" }, resolve);
+    });
+    
     loading.hidden = true;
+    
     if (!res?.ok) {
-      err.textContent = res?.error || "Failed to fetch OTPs.";
+      if (res?.error_code === "auth_canceled") {
+        err.innerHTML = 'Sign-in was canceled. <button id="signin" class="signin-btn">Sign in</button>';
+        document.getElementById('signin')?.addEventListener('click', () => {
+          loadOtps(); // Retry with interactive sign-in
+        });
+      } else {
+        err.textContent = res?.error || "Failed to fetch OTPs. Please try again.";
+      }
       err.hidden = false;
       return;
     }
-    render(res.otps);
-  });
+    
+    if (res.otps && res.otps.length > 0) {
+      render(res.otps);
+    } else {
+      empty.textContent = "No OTPs found in recent emails.";
+      empty.hidden = false;
+    }
+  } catch (error) {
+    console.error("Error in loadOtps:", error);
+    err.textContent = `Error: ${error.message || 'Unknown error occurred'}`;
+    err.hidden = false;
+    loading.hidden = true;
+  }
 }
 
 document.addEventListener("DOMContentLoaded", loadOtps);

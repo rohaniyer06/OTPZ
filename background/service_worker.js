@@ -1,78 +1,113 @@
-import { GOOGLE_CLIENT_ID, GMAIL_SCOPE } from "../config.js";
+// background/service_worker.js (MV3, module)
 import { fetchOtpsFromGmail } from "../services/gmail.js";
 
-// Store token in extension storage so it's available even if the service worker sleeps.
-const TOKEN_KEY = "oauth_token";
-const EXPIRY_KEY = "oauth_token_expiry";
+/* ---------- Auth helpers ---------- */
 
-async function getSavedToken() {
-  const { [TOKEN_KEY]: token, [EXPIRY_KEY]: expiry } = await chrome.storage.local.get([TOKEN_KEY, EXPIRY_KEY]);
-  if (!token || !expiry) return null;
-  if (Date.now() >= expiry) return null;
-  return token;
-}
-
-async function saveToken(token, expiresInSec) {
-  // small buffer so we refresh a bit early
-  const expiry = Date.now() + (expiresInSec - 60) * 1000;
-  await chrome.storage.local.set({ [TOKEN_KEY]: token, [EXPIRY_KEY]: expiry });
-}
-
-function parseFragmentParams(redirectUrl) {
-  const hash = redirectUrl.split("#")[1] || "";
-  return Object.fromEntries(new URLSearchParams(hash));
-}
-
-/**
- * Authenticate the user via OAuth implicit flow using chrome.identity.launchWebAuthFlow.
- * This uses a redirect URI of https://<EXTENSION_ID>.chromiumapp.org/ (must be whitelisted in GCP).
- */
-async function getAccessTokenInteractive() {
-  const redirectUri = `https://${chrome.runtime.id}.chromiumapp.org/`;
-  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  authUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
-  authUrl.searchParams.set("response_type", "token");
-  authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set("scope", GMAIL_SCOPE);
-  authUrl.searchParams.set("prompt", "consent"); // always show for demo clarity
-  authUrl.searchParams.set("include_granted_scopes", "true");
-
-  const redirectResponse = await chrome.identity.launchWebAuthFlow({
-    url: authUrl.toString(),
-    interactive: true
+// Silent attempt: resolve null on failure (do NOT throw) to avoid noisy errors.
+function getAuthTokenSilent() {
+  return new Promise((resolve) => {
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      if (chrome.runtime.lastError || !token) return resolve(null);
+      resolve(token);
+    });
   });
-
-  const { access_token, expires_in, token_type, error, error_description } = parseFragmentParams(redirectResponse);
-  if (error) throw new Error(`OAuth error: ${error} ${error_description || ""}`);
-  if (token_type !== "Bearer") throw new Error("Unexpected token type");
-  if (!access_token) throw new Error("No access token returned");
-  await saveToken(access_token, Number(expires_in || 3600));
-  return access_token;
 }
 
-/**
- * Get a valid access token (re-use if not expired, else pop an OAuth window).
- */
-async function getAccessToken() {
-  const cached = await getSavedToken();
-  if (cached) return cached;
-  return await getAccessTokenInteractive();
+// Interactive attempt: if user cancels/denies, resolve null (do NOT throw).
+function getAuthTokenInteractive() {
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        // Handle the common cancel/deny path quietly
+        if (/user did not approve access/i.test(err.message)) return resolve(null);
+        // Anything else is a real error
+        return reject(err);
+      }
+      resolve(token || null);
+    });
+  });
 }
 
-// Handle popup requests
+// Remove a cached token so Chrome will fetch/refresh a new one.
+function removeCachedAuthToken(token) {
+  return new Promise((resolve) => {
+    chrome.identity.removeCachedAuthToken({ token }, () => resolve());
+  });
+}
+
+// Get a token: try silent first, then interactive. If user canceled, signal back to popup.
+async function getTokenSmart() {
+  const silent = await getAuthTokenSilent();
+  if (silent) return silent;
+  const interactive = await getAuthTokenInteractive();
+  if (interactive) return interactive;
+
+  // User canceled or closed the dialog.
+  const e = new Error("Sign-in was canceled by the user.");
+  e.code = "auth_canceled";
+  throw e;
+}
+
+/* ---------- Request wrapper ---------- */
+
+function isUnauthorized(e) {
+  const s = String(e?.message || e || "");
+  return s.includes("401") || /unauthori[zs]ed/i.test(s);
+}
+
+// Run a Gmail call with auto token (retry once on 401 after clearing cache)
+async function withGmailToken(run) {
+  let token = await getTokenSmart(); // may throw with code=auth_canceled
+  try {
+    return await run(token);
+  } catch (e) {
+    if (isUnauthorized(e)) {
+      await removeCachedAuthToken(token);
+      token = await getTokenSmart();
+      return await run(token);
+    }
+    throw e;
+  }
+}
+
+/* ---------- Message handling ---------- */
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "GET_OTPS") {
     (async () => {
       try {
-        const token = await getAccessToken();
-        const otps = await fetchOtpsFromGmail(token);
+        const otps = await withGmailToken((token) => fetchOtpsFromGmail(token));
         sendResponse({ ok: true, otps });
       } catch (err) {
-        console.error(err);
+        if (err?.code === "auth_canceled") {
+          // Graceful: tell popup the user canceled so it can show a friendly prompt
+          return sendResponse({ ok: false, error: "Sign-in canceled", error_code: "auth_canceled" });
+        }
+        console.error("[GET_OTPS] error:", err?.message || err);
         sendResponse({ ok: false, error: String(err?.message || err) });
       }
     })();
-    return true; // indicate async response
+    return true; // async
   }
+
+  // Optional: explicit "Sign in" action the popup can trigger to re-open consent
+  if (message?.type === "SIGN_IN") {
+    (async () => {
+      try {
+        const token = await getAuthTokenInteractive();
+        if (!token) return sendResponse({ ok: false, error: "Sign-in canceled", error_code: "auth_canceled" });
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e?.message || e) });
+      }
+    })();
+    return true;
+  }
+});
+
+/* ---------- One-time cleanup from old implementation ---------- */
+chrome.runtime.onInstalled.addListener(async () => {
+  try { await chrome.storage.local.remove(["oauth_token", "oauth_token_expiry"]); } catch {}
 });
 
