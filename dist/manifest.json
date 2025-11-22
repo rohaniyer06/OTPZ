@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "OTPZ",
+  "version": "0.1.0",
+  "description": "Fetch recent OTP codes from your Gmail and show them in a popup.",
+  "permissions": ["identity", "storage", "activeTab", "scripting"],
+  "host_permissions": ["https://www.googleapis.com/*", "https://accounts.google.com/*", "<all_urls>"],
+  "background": { "service_worker": "background/service_worker.js", "type": "module" },
+  "action": { "default_popup": "popup/popup.html" },
+  "oauth2": {
+    "client_id": "137044696259-97n46u26gllp1mh47443dkjdu201jili.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
+  }
+}
+

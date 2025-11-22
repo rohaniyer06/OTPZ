@@ -1,0 +1,17 @@
+{
+  "name": "otpz",
+  "version": "1.0.0",
+  "description": "A Chrome extension for managing OTPs from Gmail",
+  "scripts": {
+    "build": "node build.js",
+    "clean": "rimraf dist",
+    "prepack": "npm run clean && npm run build"
+  },
+  "keywords": ["chrome-extension", "otp", "2fa", "gmail"],
+  "author": "Rohan Iyer",
+  "license": "MIT",
+  "devDependencies": {
+    "fs-extra": "^10.0.0",
+    "rimraf": "^3.0.2"
+  }
+}
