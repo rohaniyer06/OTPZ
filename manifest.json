@@ -8,8 +8,7 @@
   "background": { "service_worker": "background/service_worker.js", "type": "module" },
   "action": { "default_popup": "popup/popup.html" },
   "oauth2": {
-    "client_id": "137044696259-97n46u26gllp1mh47443dkjdu201jili.apps.googleusercontent.com",
+    "client_id": "{{CLIENT_ID}}",
     "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
   }
 }
-
