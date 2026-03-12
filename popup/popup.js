@@ -6,15 +6,23 @@ const err = $("#error");
 const refreshBtn = $("#refresh");
 const refreshIcon = $(".refresh-icon");
 const refreshCountdown = $(".refresh-countdown");
+const settingsToggle = $("#settings-toggle");
+const settingsPanel = $("#settings-panel");
+const settingsClose = $("#settings-close");
+const imessageToggle = $("#imessage-toggle");
+const imessageStatus = $("#imessage-status");
+const imessageSetup = $("#imessage-setup");
+const imessageRetry = $("#imessage-retry");
+const imessageSection = $("#imessage-section");
 
 /* ========== Config ========== */
-const POLL_INTERVAL_MS = 5_000; // 5 seconds
-const THROTTLE_COOLDOWN_MS = 5_000; // matches poll interval
+const POLL_INTERVAL_MS = 5_000;
+const THROTTLE_COOLDOWN_MS = 5_000;
 
 /* ========== State ========== */
 let pollTimer = null;
 let isFirstLoad = true;
-let currentOtpCodes = []; // Track displayed OTPs for smart re-render
+let currentOtpCodes = [];
 
 // Throttle state
 let throttleLocked = false;
@@ -32,11 +40,6 @@ function formatDate(ms) {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function truncate(str, max) {
-  if (!str) return "";
-  return str.length > max ? str.slice(0, max) + "…" : str;
-}
-
 /* ========== Throttle for manual refresh ========== */
 
 function lockRefreshButton() {
@@ -48,9 +51,7 @@ function lockRefreshButton() {
   let remaining = Math.ceil(THROTTLE_COOLDOWN_MS / 1000);
   refreshCountdown.textContent = `${remaining}s`;
 
-  // Clear any existing countdown
   clearInterval(cooldownCountdownTimer);
-
   cooldownCountdownTimer = setInterval(() => {
     remaining--;
     if (remaining <= 0) {
@@ -60,7 +61,6 @@ function lockRefreshButton() {
     }
   }, 1000);
 
-  // Hard unlock after the full cooldown (safety net)
   clearTimeout(cooldownTimer);
   cooldownTimer = setTimeout(unlockRefreshButton, THROTTLE_COOLDOWN_MS);
 }
@@ -74,12 +74,19 @@ function unlockRefreshButton() {
   clearTimeout(cooldownTimer);
 }
 
-// Reset the throttle cooldown (called when auto-poll fires)
 function resetThrottleCooldown() {
   if (throttleLocked) {
-    // Restart the countdown from the full duration
     lockRefreshButton();
   }
+}
+
+/* ========== Source badge ========== */
+
+function sourceBadgeHtml(source) {
+  if (source === "imessage") {
+    return '<span class="source-badge imessage">💬 iMessage</span>';
+  }
+  return '<span class="source-badge gmail">📧 Gmail</span>';
 }
 
 /* ========== Render ========== */
@@ -102,8 +109,8 @@ function render(otps) {
     li.innerHTML = `
       <div class="otp-info">
         <div class="code">${item.code}</div>
-        <div class="meta">${truncate(item.subject, 32) || "(no subject)"} <span class="from-text">· ${truncate(item.from, 24) || ""}</span></div>
-        <div class="timestamp">${formatDate(item.dateMs)}</div>
+        <div class="meta">${item.subject || "(no subject)"}</div>
+        <div class="meta from-text">${item.from || ""} · ${formatDate(item.dateMs)} ${sourceBadgeHtml(item.source)}</div>
       </div>
       <div class="actions">
         <button class="autofill" data-code="${item.code}">
@@ -132,13 +139,11 @@ async function handleListClick(e) {
       btn.innerHTML = `
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         Copied!`;
-
       try {
         await chrome.runtime.sendMessage({ type: "OTP_COPIED", code });
       } catch (e) {
         console.error("Failed to mark OTP as copied:", e);
       }
-
       setTimeout(() => {
         const item = btn.closest(".li");
         if (item) {
@@ -179,13 +184,11 @@ async function handleListClick(e) {
         btn.innerHTML = `
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           Filled!`;
-
         try {
           await chrome.runtime.sendMessage({ type: "OTP_COPIED", code });
         } catch (e) {
           console.error("Failed to mark OTP as used:", e);
         }
-
         setTimeout(() => {
           if (item) {
             item.classList.add("removing");
@@ -211,7 +214,6 @@ async function handleListClick(e) {
 /* ========== Load OTPs ========== */
 
 async function loadOtps({ silent = false } = {}) {
-  // Only show the full loading spinner on first load
   if (!silent && isFirstLoad) {
     loading.hidden = false;
     err.hidden = true;
@@ -219,7 +221,6 @@ async function loadOtps({ silent = false } = {}) {
     list.hidden = true;
   }
 
-  // Spin the refresh icon briefly to indicate activity (if visible)
   if (!throttleLocked) {
     refreshBtn.style.transition = "transform 0.5s ease";
     refreshBtn.style.transform = "rotate(360deg)";
@@ -252,7 +253,6 @@ async function loadOtps({ silent = false } = {}) {
     }
 
     if (res.otps && res.otps.length > 0) {
-      // Smart re-render: only update if OTPs changed
       const newCodes = res.otps.map((o) => o.code);
       const changed =
         newCodes.length !== currentOtpCodes.length ||
@@ -262,8 +262,7 @@ async function loadOtps({ silent = false } = {}) {
         render(res.otps);
       }
     } else {
-      if (currentOtpCodes.length > 0 || isFirstLoad === false) {
-        // OTPs cleared — update UI
+      if (currentOtpCodes.length > 0) {
         list.hidden = true;
         list.innerHTML = "";
         currentOtpCodes = [];
@@ -287,7 +286,6 @@ function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
     loadOtps({ silent: true });
-    // Reset the manual refresh throttle since an auto-poll just fired
     resetThrottleCooldown();
   }, POLL_INTERVAL_MS);
 }
@@ -299,19 +297,77 @@ function stopPolling() {
   }
 }
 
-/* ========== Manual refresh (throttled) ========== */
-
 function handleManualRefresh() {
-  if (throttleLocked) return; // Ignore clicks during cooldown
-
-  // Fire immediately
+  if (throttleLocked) return;
   loadOtps({ silent: false });
-
-  // Lock the button for the cooldown period
   lockRefreshButton();
-
-  // Reset the auto-poll timer so it doesn't fire right after
   startPolling();
+}
+
+/* ========== Settings Panel ========== */
+
+function openSettings() {
+  settingsPanel.hidden = false;
+  refreshImessageStatus();
+}
+
+function closeSettings() {
+  settingsPanel.hidden = true;
+}
+
+/* ========== iMessage Settings ========== */
+
+async function refreshImessageStatus() {
+  try {
+    const res = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: "IMESSAGE_STATUS" }, resolve);
+    });
+
+    imessageToggle.checked = res.enabled;
+
+    if (res.enabled) {
+      imessageStatus.hidden = false;
+      const dot = imessageStatus.querySelector(".status-dot");
+      const text = imessageStatus.querySelector(".status-text");
+
+      if (res.wsConnected) {
+        dot.className = "status-dot connected";
+        text.textContent = "Connected — receiving iMessage OTPs";
+        imessageSetup.hidden = true;
+      } else if (res.serverRunning) {
+        dot.className = "status-dot connecting";
+        text.textContent = "Server found, connecting…";
+        imessageSetup.hidden = true;
+      } else {
+        dot.className = "status-dot disconnected";
+        text.textContent = "Server not running";
+        imessageSetup.hidden = false;
+      }
+    } else {
+      imessageStatus.hidden = true;
+      imessageSetup.hidden = true;
+    }
+  } catch (e) {
+    console.error("Failed to get iMessage status:", e);
+  }
+}
+
+async function toggleImessage(enabled) {
+  try {
+    await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: "IMESSAGE_SET_ENABLED", enabled }, resolve);
+    });
+    // Wait a moment for WS to connect, then refresh status
+    setTimeout(refreshImessageStatus, enabled ? 1500 : 100);
+  } catch (e) {
+    console.error("Failed to toggle iMessage:", e);
+  }
+}
+
+/* ========== Platform detection ========== */
+
+function isMacOS() {
+  return /Mac/i.test(navigator.userAgent || navigator.platform || "");
 }
 
 /* ========== Init ========== */
@@ -320,8 +376,33 @@ document.addEventListener("DOMContentLoaded", () => {
   // Attach action button handler once (event delegation)
   list.addEventListener("click", handleListClick);
 
-  loadOtps(); // Initial fetch
-  startPolling(); // Start 5-second auto-poll
+  loadOtps();
+  startPolling();
+
+  // Settings panel
+  settingsToggle.addEventListener("click", openSettings);
+  settingsClose.addEventListener("click", closeSettings);
+
+  // iMessage toggle
+  imessageToggle.addEventListener("change", (e) => {
+    toggleImessage(e.target.checked);
+  });
+
+  // Retry button
+  imessageRetry?.addEventListener("click", () => {
+    refreshImessageStatus();
+  });
+
+  // Hide iMessage section on non-macOS
+  if (!isMacOS()) {
+    imessageSection.hidden = true;
+  }
+
+  // Populate the server path in setup instructions
+  const serverPath = $("#server-path");
+  if (serverPath) {
+    serverPath.textContent = "path/to/otpz";
+  }
 });
 
 refreshBtn.addEventListener("click", handleManualRefresh);

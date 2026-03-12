@@ -403,19 +403,13 @@ ul {
   font-size: 11px;
   color: var(--text-secondary);
   margin-top: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
-.meta .from-text {
+.from-text {
   color: var(--text-muted);
-}
-
-.timestamp {
   font-size: 10px;
-  color: var(--text-muted);
-  margin-top: 2px;
 }
 
 /* --- Action buttons (3D) --- */
@@ -542,4 +536,335 @@ ul {
 .small {
   font-size: 10px;
   color: var(--text-muted);
+}
+
+/* --- Source badge on OTP cards --- */
+.source-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  letter-spacing: 0.3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.source-badge.gmail {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.source-badge.imessage {
+  background: #d1fae5;
+  color: #059669;
+}
+
+/* --- Header actions (settings + refresh) --- */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#settings-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1.5px solid var(--border);
+  background: linear-gradient(to bottom, #ffffff, #f3f1fa);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow:
+    var(--shadow-3d),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+#settings-toggle:hover {
+  color: var(--accent);
+  border-color: rgba(124, 58, 237, 0.25);
+  background: linear-gradient(to bottom, #ffffff, #ede9fe);
+  transform: translateY(-1px);
+  box-shadow:
+    var(--shadow-3d-hover),
+    0 0 16px var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+#settings-toggle:active {
+  transform: translateY(2px);
+  box-shadow: var(--shadow-3d-active);
+}
+
+/* --- Settings Panel --- */
+.settings-panel {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-base);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  animation: settingsSlideIn 0.25s ease-out;
+  overflow-y: auto;
+}
+
+@keyframes settingsSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.settings-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.settings-close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+}
+
+.settings-section {
+  padding: 14px 16px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-icon {
+  font-size: 20px;
+}
+
+.settings-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-desc {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* --- Toggle switch --- */
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: #d1d5db;
+  border-radius: 11px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 18px;
+  height: 18px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.25s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.toggle input:checked+.toggle-slider {
+  background: var(--accent);
+}
+
+.toggle input:checked+.toggle-slider::before {
+  transform: translateX(18px);
+}
+
+/* --- iMessage status --- */
+.imessage-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-sm);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d1d5db;
+  flex-shrink: 0;
+}
+
+.status-dot.connected {
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+.status-dot.disconnected {
+  background: var(--error-color);
+}
+
+.status-dot.connecting {
+  background: #f59e0b;
+  animation: statusPulse 1s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* --- iMessage setup instructions --- */
+.imessage-setup {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-sm);
+}
+
+.setup-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.setup-steps {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  padding-left: 18px;
+  margin: 0;
+}
+
+.setup-steps li {
+  margin-bottom: 6px;
+}
+
+.setup-code {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.setup-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.retry-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(to bottom, var(--accent), var(--accent));
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 3px 0px #5b21b6, 0 4px 12px var(--accent-glow);
+}
+
+.retry-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 0px #5b21b6, 0 6px 20px var(--accent-glow);
+}
+
+.retry-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0px #5b21b6;
 }
