@@ -1,2 +1,5 @@
 config.js
 config_example.js
+manifest.json
+server/node_modules/
+.DS_Store

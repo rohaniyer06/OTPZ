@@ -1,0 +1,19 @@
+{
+    "name": "otpz-imessage-server",
+    "version": "1.0.0",
+    "description": "Local bridge server for OTPZ — watches iMessages for OTP codes and serves them via WebSocket",
+    "main": "server.js",
+    "type": "module",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "node --watch server.js"
+    },
+    "dependencies": {
+        "@photon-ai/imessage-kit": "^2.1.2",
+        "better-sqlite3": "^11.0.0",
+        "ws": "^8.18.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
