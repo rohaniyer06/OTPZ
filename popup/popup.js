@@ -148,7 +148,13 @@ async function handleListClick(e) {
         const item = btn.closest(".li");
         if (item) {
           item.classList.add("removing");
-          setTimeout(() => item.remove(), 350);
+          setTimeout(() => {
+            item.remove();
+            if (list.children.length === 0) {
+              list.hidden = true;
+              empty.hidden = false;
+            }
+          }, 350);
         }
       }, 600);
     } catch {
@@ -192,7 +198,13 @@ async function handleListClick(e) {
         setTimeout(() => {
           if (item) {
             item.classList.add("removing");
-            setTimeout(() => item.remove(), 350);
+            setTimeout(() => {
+              item.remove();
+              if (list.children.length === 0) {
+                list.hidden = true;
+                empty.hidden = false;
+              }
+            }, 350);
           }
         }, 600);
       } else {
