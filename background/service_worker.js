@@ -4,6 +4,7 @@ import { fetchOtpsFromGmail } from "../services/gmail.js";
 // Storage keys
 const COPIED_OTPS_KEY = 'copiedOtps';
 const IMESSAGE_ENABLED_KEY = 'imessageEnabled';
+const IMESSAGE_OTPS_KEY = 'imessageOtps'; // Persisted across SW restarts
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 /* ========== Auth helpers (Gmail) ========== */
@@ -66,103 +67,45 @@ async function withGmailToken(run) {
   }
 }
 
-/* ========== iMessage WebSocket Client ========== */
+/* ========== iMessage — Offscreen Document Management ========== */
+// The WebSocket connection lives in the offscreen document, which is NOT
+// subject to Chrome's 30-second service worker suspension. The offscreen
+// doc forwards OTP data to us via chrome.runtime messaging.
 
-const IMESSAGE_WS_URL = "ws://127.0.0.1:7483";
 const IMESSAGE_HEALTH_URL = "http://127.0.0.1:7483/health";
 const IMESSAGE_OTPS_URL = "http://127.0.0.1:7483/otps";
 const KEEPALIVE_ALARM_NAME = "otpz-imessage-keepalive";
-const KEEPALIVE_INTERVAL_MINUTES = 0.4; // ~24 seconds — below the 30s suspend threshold
+const KEEPALIVE_INTERVAL_MINUTES = 0.5; // 30 seconds
 
-let ws = null;
-let wsReconnectTimer = null;
-let wsReconnectDelay = 1000;
-const WS_MAX_RECONNECT_DELAY = 30000;
 let imessageOtps = [];
 let imessageConnected = false;
 
-function wsConnect() {
-  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
-    return;
-  }
+/* ========== OTP Persistence ========== */
 
+async function persistOtps() {
   try {
-    ws = new WebSocket(IMESSAGE_WS_URL);
-
-    ws.onopen = () => {
-      console.log("[iMessage] WebSocket connected");
-      imessageConnected = true;
-      wsReconnectDelay = 1000;
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "OTP") {
-          const otp = {
-            code: data.code,
-            subject: data.senderName || data.sender || "iMessage",
-            from: data.sender || "",
-            dateMs: data.dateMs || Date.now(),
-            source: "imessage",
-            service: data.service || "SMS",
-          };
-          if (!imessageOtps.some((o) => o.code === otp.code)) {
-            imessageOtps.push(otp);
-            cleanupImessageOtps();
-          }
-        } else if (data.type === "SYNC") {
-          imessageOtps = (data.otps || []).map((o) => ({
-            code: o.code,
-            subject: o.senderName || o.sender || "iMessage",
-            from: o.sender || "",
-            dateMs: o.dateMs || Date.now(),
-            source: "imessage",
-            service: o.service || "SMS",
-          }));
-          cleanupImessageOtps();
-        }
-      } catch (e) {
-        console.error("[iMessage] Failed to parse WS message:", e);
-      }
-    };
-
-    ws.onclose = () => {
-      console.log("[iMessage] WebSocket disconnected");
-      imessageConnected = false;
-      ws = null;
-      scheduleReconnect();
-    };
-
-    ws.onerror = () => {
-      console.error("[iMessage] WebSocket error");
-      imessageConnected = false;
-    };
+    await chrome.storage.local.set({ [IMESSAGE_OTPS_KEY]: imessageOtps });
   } catch (e) {
-    console.error("[iMessage] Failed to create WebSocket:", e);
-    imessageConnected = false;
-    scheduleReconnect();
+    console.error("[iMessage] Failed to persist OTPs:", e);
   }
 }
 
-function wsDisconnect() {
-  clearTimeout(wsReconnectTimer);
-  wsReconnectTimer = null;
-  if (ws) {
-    ws.close();
-    ws = null;
+async function restoreOtps() {
+  try {
+    const result = await chrome.storage.local.get(IMESSAGE_OTPS_KEY);
+    const stored = result[IMESSAGE_OTPS_KEY];
+    if (Array.isArray(stored) && stored.length > 0) {
+      for (const otp of stored) {
+        if (!imessageOtps.some((o) => o.code === otp.code && o.dateMs === otp.dateMs)) {
+          imessageOtps.push(otp);
+        }
+      }
+      cleanupImessageOtps();
+      console.log(`[iMessage] Restored ${imessageOtps.length} OTPs from storage`);
+    }
+  } catch (e) {
+    console.error("[iMessage] Failed to restore OTPs:", e);
   }
-  imessageConnected = false;
-  imessageOtps = [];
-}
-
-function scheduleReconnect() {
-  if (wsReconnectTimer) return;
-  wsReconnectTimer = setTimeout(() => {
-    wsReconnectTimer = null;
-    wsConnect();
-    wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_MAX_RECONNECT_DELAY);
-  }, wsReconnectDelay);
 }
 
 function cleanupImessageOtps() {
@@ -170,12 +113,51 @@ function cleanupImessageOtps() {
   imessageOtps = imessageOtps.filter((o) => o.dateMs > cutoff);
 }
 
-/* ========== Keepalive & HTTP Fallback ========== */
+/* ========== Offscreen Document Lifecycle ========== */
 
-// Chrome.alarms keepalive: fires every ~24 seconds to prevent the
-// service worker from being suspended while iMessage is enabled.
-// On each tick we also do an HTTP poll to /otps as a fallback
-// to catch any OTPs missed during a brief WebSocket gap.
+let offscreenCreating = null;
+
+async function ensureOffscreenDocument() {
+  // Check if offscreen document already exists
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ["OFFSCREEN_DOCUMENT"],
+    documentUrls: [chrome.runtime.getURL("offscreen/offscreen.html")],
+  });
+
+  if (existingContexts.length > 0) {
+    return; // Already exists
+  }
+
+  // Avoid race condition if multiple callers try to create simultaneously
+  if (offscreenCreating) {
+    await offscreenCreating;
+    return;
+  }
+
+  offscreenCreating = chrome.offscreen.createDocument({
+    url: "offscreen/offscreen.html",
+    reasons: ["WORKERS"],
+    justification: "Maintains persistent WebSocket connection to the local iMessage bridge server for real-time OTP delivery",
+  });
+
+  await offscreenCreating;
+  offscreenCreating = null;
+  console.log("[iMessage] Offscreen document created");
+}
+
+async function closeOffscreenDocument() {
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ["OFFSCREEN_DOCUMENT"],
+    documentUrls: [chrome.runtime.getURL("offscreen/offscreen.html")],
+  });
+
+  if (existingContexts.length > 0) {
+    await chrome.offscreen.closeDocument();
+    console.log("[iMessage] Offscreen document closed");
+  }
+}
+
+/* ========== Keepalive & HTTP Fallback ========== */
 
 async function startKeepalive() {
   await chrome.alarms.create(KEEPALIVE_ALARM_NAME, {
@@ -189,16 +171,21 @@ async function stopKeepalive() {
   console.log("[iMessage] Keepalive alarm stopped");
 }
 
-chrome.alarms.onAlarm.addListener((alarm) => {
+chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== KEEPALIVE_ALARM_NAME) return;
 
-  // 1. Ensure WebSocket is alive
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    wsConnect();
+  // Restore persisted OTPs
+  await restoreOtps();
+
+  // Make sure offscreen document is still alive
+  try {
+    await ensureOffscreenDocument();
+  } catch (e) {
+    console.error("[iMessage] Failed to ensure offscreen document:", e);
   }
 
-  // 2. HTTP fallback poll — catch anything missed during disconnects
-  fetchImessageOtpsHttp().catch(() => { });
+  // HTTP fallback poll
+  await fetchImessageOtpsHttp();
 });
 
 async function fetchImessageOtpsHttp() {
@@ -208,6 +195,7 @@ async function fetchImessageOtpsHttp() {
     const data = await res.json();
     if (!data.ok || !Array.isArray(data.otps)) return;
 
+    let added = false;
     for (const o of data.otps) {
       const otp = {
         code: o.code,
@@ -217,17 +205,20 @@ async function fetchImessageOtpsHttp() {
         source: "imessage",
         service: o.service || "SMS",
       };
-      if (!imessageOtps.some((existing) => existing.code === otp.code)) {
+      if (!imessageOtps.some((existing) => existing.code === otp.code && existing.dateMs === otp.dateMs)) {
         imessageOtps.push(otp);
+        added = true;
       }
     }
-    cleanupImessageOtps();
+    if (added) {
+      cleanupImessageOtps();
+      persistOtps();
+    }
   } catch {
-    // Server not reachable — that's fine, degrade gracefully
+    // Server not reachable
   }
 }
 
-// Health check (used by popup for status display)
 async function checkImessageHealth() {
   try {
     const res = await fetch(IMESSAGE_HEALTH_URL, { signal: AbortSignal.timeout(2000) });
@@ -241,18 +232,75 @@ async function checkImessageHealth() {
   }
 }
 
-// Initialize iMessage connection based on stored preference
+/* ========== iMessage Init/Teardown ========== */
+
+async function startImessage() {
+  await restoreOtps();
+  await ensureOffscreenDocument();
+  startKeepalive();
+}
+
+async function stopImessage() {
+  await closeOffscreenDocument();
+  stopKeepalive();
+  imessageConnected = false;
+  imessageOtps = [];
+  persistOtps();
+}
+
 async function initImessage() {
   const result = await chrome.storage.local.get(IMESSAGE_ENABLED_KEY);
   if (result[IMESSAGE_ENABLED_KEY]) {
-    wsConnect();
-    startKeepalive();
+    await startImessage();
   }
 }
 
 /* ========== Message handling ========== */
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+
+  // --- Messages FROM the offscreen document ---
+
+  if (message?.type === "WS_STATUS") {
+    imessageConnected = message.connected;
+    console.log(`[iMessage] WS status: ${message.connected ? "connected" : "disconnected"}`);
+    return false;
+  }
+
+  if (message?.type === "WS_OTP_DATA") {
+    const data = message.payload;
+    if (data.type === "OTP") {
+      const otp = {
+        code: data.code,
+        subject: data.senderName || data.sender || "iMessage",
+        from: data.sender || "",
+        dateMs: data.dateMs || Date.now(),
+        source: "imessage",
+        service: data.service || "SMS",
+      };
+      if (!imessageOtps.some((o) => o.code === otp.code && o.dateMs === otp.dateMs)) {
+        imessageOtps.push(otp);
+        cleanupImessageOtps();
+        persistOtps();
+        console.log(`[iMessage] OTP received: ${otp.code}`);
+      }
+    } else if (data.type === "SYNC") {
+      imessageOtps = (data.otps || []).map((o) => ({
+        code: o.code,
+        subject: o.senderName || o.sender || "iMessage",
+        from: o.sender || "",
+        dateMs: o.dateMs || Date.now(),
+        source: "imessage",
+        service: o.service || "SMS",
+      }));
+      cleanupImessageOtps();
+      persistOtps();
+    }
+    return false;
+  }
+
+  // --- Messages FROM the popup ---
+
   if (message?.type === "GET_OTPS") {
     (async () => {
       try {
@@ -263,6 +311,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const copiedOtps = new Set(result[COPIED_OTPS_KEY] || []);
         const now = Date.now();
 
+        await restoreOtps();
         cleanupImessageOtps();
         const allOtps = [...gmailOtps, ...imessageOtps];
 
@@ -300,6 +349,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         copiedOtps.add(message.code);
         await chrome.storage.local.set({ [COPIED_OTPS_KEY]: Array.from(copiedOtps) });
         imessageOtps = imessageOtps.filter((o) => o.code !== message.code);
+        persistOtps();
         sendResponse({ ok: true });
       } catch (e) {
         console.error('Failed to mark OTP as copied:', e);
@@ -327,11 +377,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const enabled = !!message.enabled;
       await chrome.storage.local.set({ [IMESSAGE_ENABLED_KEY]: enabled });
       if (enabled) {
-        wsConnect();
-        startKeepalive();
+        await startImessage();
       } else {
-        wsDisconnect();
-        stopKeepalive();
+        await stopImessage();
       }
       sendResponse({ ok: true, enabled });
     })();
@@ -360,5 +408,5 @@ chrome.runtime.onInstalled.addListener(async () => {
   try { await chrome.storage.local.remove(["oauth_token", "oauth_token_expiry"]); } catch { }
 });
 
-// Initialize iMessage connection on service worker startup
+// Initialize iMessage on service worker startup
 initImessage();

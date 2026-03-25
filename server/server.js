@@ -19,18 +19,25 @@ import { extractOtps, isShortcode } from "./otp-parser.js";
 const PORT = parseInt(process.env.OTPZ_PORT || "7483", 10);
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const POLL_INTERVAL = 2000; // 2 seconds
+const WS_PING_INTERVAL = 25000; // 25 seconds — keeps Chrome extension alive
 
 /* ========== State ========== */
-const otpStore = []; // { code, sender, senderName, dateMs, service, addedAt }
-const sentCodes = new Set(); // Track codes already pushed to avoid duplicates
+const otpStore = []; // { code, sender, senderName, dateMs, service, addedAt, dedupeKey }
+const sentKeys = new Set(); // Track dedup keys to avoid duplicates
 
 /* ========== OTP Store Management ========== */
 
+function makeDedupeKey(code, sender, dateMs) {
+    // Round dateMs to nearest 5 seconds to handle slight timestamp variance
+    const roundedTime = Math.round(dateMs / 5000) * 5000;
+    return `${code}:${sender || "unknown"}:${roundedTime}`;
+}
+
 function addOtp(otp) {
-    // Deduplicate by code
-    if (sentCodes.has(otp.code)) return false;
-    sentCodes.add(otp.code);
-    otpStore.push({ ...otp, addedAt: Date.now() });
+    const key = makeDedupeKey(otp.code, otp.sender, otp.dateMs);
+    if (sentKeys.has(key)) return false;
+    sentKeys.add(key);
+    otpStore.push({ ...otp, addedAt: Date.now(), dedupeKey: key });
     cleanupExpired();
     return true;
 }
@@ -39,7 +46,7 @@ function cleanupExpired() {
     const cutoff = Date.now() - OTP_TTL_MS;
     for (let i = otpStore.length - 1; i >= 0; i--) {
         if (otpStore[i].addedAt < cutoff) {
-            sentCodes.delete(otpStore[i].code);
+            sentKeys.delete(otpStore[i].dedupeKey);
             otpStore.splice(i, 1);
         }
     }
@@ -93,6 +100,7 @@ const clients = new Set();
 
 wss.on("connection", (ws) => {
     clients.add(ws);
+    ws.isAlive = true;
     log(`Client connected (total: ${clients.size})`);
 
     // Send current OTPs to newly connected client
@@ -100,6 +108,10 @@ wss.on("connection", (ws) => {
     if (current.length > 0) {
         ws.send(JSON.stringify({ type: "SYNC", otps: current }));
     }
+
+    ws.on("pong", () => {
+        ws.isAlive = true;
+    });
 
     ws.on("close", () => {
         clients.delete(ws);
@@ -110,6 +122,26 @@ wss.on("connection", (ws) => {
         log(`WebSocket error: ${err.message}`, "error");
         clients.delete(ws);
     });
+});
+
+// Ping all clients every 25 seconds to keep the connection alive.
+// Chrome MV3 service workers stay awake while receiving WebSocket traffic.
+const pingInterval = setInterval(() => {
+    for (const client of clients) {
+        if (!client.isAlive) {
+            // Client didn't respond to last ping — terminate
+            log("Terminating unresponsive client", "warn");
+            client.terminate();
+            clients.delete(client);
+            continue;
+        }
+        client.isAlive = false;
+        client.ping();
+    }
+}, WS_PING_INTERVAL);
+
+wss.on("close", () => {
+    clearInterval(pingInterval);
 });
 
 function broadcast(data) {
@@ -128,7 +160,7 @@ const sdk = new IMessageSDK({
     debug: false,
     watcher: {
         pollInterval: POLL_INTERVAL,
-        excludeOwnMessages: true,
+        excludeOwnMessages: false, // Allow self-sent messages for testing
     },
 });
 
@@ -137,8 +169,8 @@ async function startWatching() {
 
     await sdk.startWatching({
         onDirectMessage: (msg) => {
-            // Skip messages from self or reactions
-            if (msg.isFromMe || msg.isReaction) return;
+            // Skip reactions (tapbacks), but allow self-sent messages
+            if (msg.isReaction) return;
 
             const text = msg.text;
             if (!text) return;
@@ -194,6 +226,7 @@ async function main() {
         log(`Server listening on http://127.0.0.1:${PORT}`);
         log(`Health check: http://127.0.0.1:${PORT}/health`);
         log(`WebSocket:    ws://127.0.0.1:${PORT}`);
+        log(`Ping interval: ${WS_PING_INTERVAL / 1000}s`);
         console.log("");
     });
 
@@ -215,6 +248,7 @@ async function main() {
 // Graceful shutdown
 process.on("SIGINT", async () => {
     log("Shutting down...");
+    clearInterval(pingInterval);
     sdk.stopWatching();
     await sdk.close();
     wss.close();
@@ -223,6 +257,7 @@ process.on("SIGINT", async () => {
 });
 
 process.on("SIGTERM", async () => {
+    clearInterval(pingInterval);
     sdk.stopWatching();
     await sdk.close();
     process.exit(0);
