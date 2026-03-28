@@ -158,49 +158,56 @@ function broadcast(data) {
 
 const sdk = new IMessageSDK({
     debug: false,
-    watcher: {
-        pollInterval: POLL_INTERVAL,
-        excludeOwnMessages: false, // Allow self-sent messages for testing
-    },
+    // We do NOT use the built-in watcher because it misses delayed iCloud syncs
+    // when the Mac wakes from sleep.
 });
 
+let watchInterval = null;
+
 async function startWatching() {
-    log("Starting iMessage watcher...");
+    log("Starting reliable 10-minute sliding window watcher...");
 
-    await sdk.startWatching({
-        onDirectMessage: (msg) => {
-            // Skip reactions (tapbacks), but allow self-sent messages
-            if (msg.isReaction) return;
+    watchInterval = setInterval(async () => {
+        try {
+            // ALWAYS scan the entire last 10 minutes.
+            // This is critical because macOS often syncs messages upon waking from sleep
+            // using their historical timestamps (e.g. 8 hours ago). A sliding window ensures
+            // no OTPs are missed due to synchronization lag. Our addOtp dedup cache handles duplicates.
+            const since = new Date(Date.now() - 10 * 60 * 1000);
+            const { messages } = await sdk.getMessages({ since, excludeOwnMessages: false });
 
-            const text = msg.text;
-            if (!text) return;
+            for (const msg of messages) {
+                // Skip reactions (tapbacks), but allow self-sent messages
+                if (msg.isReaction) continue;
 
-            const shortcode = isShortcode(msg.sender);
-            const codes = extractOtps(text, { fromShortcode: shortcode });
+                const text = msg.text;
+                if (!text) continue;
 
-            if (codes.length === 0) return;
+                const shortcode = isShortcode(msg.sender);
+                const codes = extractOtps(text, { fromShortcode: shortcode });
 
-            for (const code of codes) {
-                const otp = {
-                    code,
-                    sender: msg.sender,
-                    senderName: msg.senderName || msg.sender,
-                    dateMs: msg.date ? msg.date.getTime() : Date.now(),
-                    service: msg.service || "iMessage",
-                };
+                if (codes.length === 0) continue;
 
-                const isNew = addOtp(otp);
-                if (isNew) {
-                    log(`OTP detected: ${code} from ${msg.sender} (${msg.service})`);
-                    broadcast({ type: "OTP", ...otp });
+                for (const code of codes) {
+                    const otp = {
+                        code,
+                        sender: msg.sender,
+                        senderName: msg.senderName || msg.sender,
+                        dateMs: msg.date ? msg.date.getTime() : Date.now(),
+                        service: msg.service || "iMessage",
+                    };
+
+                    const isNew = addOtp(otp);
+                    if (isNew) {
+                        log(`OTP detected: ${code} from ${msg.sender} (${msg.service})`);
+                        broadcast({ type: "OTP", ...otp });
+                    }
                 }
             }
-        },
-
-        onError: (error) => {
+        } catch (error) {
             log(`Watcher error: ${error.message}`, "error");
-        },
-    });
+        }
+    }, POLL_INTERVAL);
 
     log("iMessage watcher active — monitoring for OTP codes");
 }
@@ -249,7 +256,7 @@ async function main() {
 process.on("SIGINT", async () => {
     log("Shutting down...");
     clearInterval(pingInterval);
-    sdk.stopWatching();
+    if (watchInterval) clearInterval(watchInterval);
     await sdk.close();
     wss.close();
     httpServer.close();
@@ -258,7 +265,7 @@ process.on("SIGINT", async () => {
 
 process.on("SIGTERM", async () => {
     clearInterval(pingInterval);
-    sdk.stopWatching();
+    if (watchInterval) clearInterval(watchInterval);
     await sdk.close();
     process.exit(0);
 });
