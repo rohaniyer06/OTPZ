@@ -38,7 +38,7 @@ git clone https://github.com/rohaniyer06/OTPZ.git
 2. Create a new project (or select an existing one)
 3. **APIs & Services → Library** → search for and enable the **Gmail API**
 4. **APIs & Services → OAuth consent screen**:
-   - Choose **External** → **Testing**
+   - Go to **Audience** → **Test Users**
    - Add your Gmail address under **Test users**
 5. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
    - Application type: **Chrome extension**
@@ -54,7 +54,7 @@ git clone https://github.com/rohaniyer06/OTPZ.git
 2. Open `manifest.json` and replace the `client_id` in the `oauth2` block:
    ```json
    "oauth2": {
-     "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+     "client_id": "YOUR_CLIENT_ID_HERE",
      "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
    }
    ```
