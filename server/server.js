@@ -156,16 +156,17 @@ function broadcast(data) {
 
 /* ========== iMessage Watcher ========== */
 
-const sdk = new IMessageSDK({
-    debug: false,
-    // We do NOT use the built-in watcher because it misses delayed iCloud syncs
-    // when the Mac wakes from sleep.
-});
-
+let sdk = null;
 let watchInterval = null;
 
 async function startWatching() {
     log("Starting reliable 10-minute sliding window watcher...");
+
+    // Instantiate SDK here so that any synchronous database permission errors 
+    // (e.g., missing Full Disk Access) are caught by the outer try/catch in main()
+    sdk = new IMessageSDK({
+        debug: false,
+    });
 
     watchInterval = setInterval(async () => {
         try {
@@ -240,7 +241,7 @@ async function main() {
     try {
         await startWatching();
     } catch (err) {
-        if (err.message?.includes("SQLITE_CANTOPEN") || err.message?.includes("permission")) {
+        if (err.message?.includes("SQLITE_CANTOPEN") || err.message?.includes("permission") || err.message?.includes("unable to open")) {
             log("Full Disk Access required!", "error");
             log("Go to: System Settings → Privacy & Security → Full Disk Access", "error");
             log("Add your terminal app (Terminal, iTerm, Warp, etc.)", "error");
@@ -257,7 +258,7 @@ process.on("SIGINT", async () => {
     log("Shutting down...");
     clearInterval(pingInterval);
     if (watchInterval) clearInterval(watchInterval);
-    await sdk.close();
+    if (sdk) await sdk.close();
     wss.close();
     httpServer.close();
     process.exit(0);
@@ -266,7 +267,7 @@ process.on("SIGINT", async () => {
 process.on("SIGTERM", async () => {
     clearInterval(pingInterval);
     if (watchInterval) clearInterval(watchInterval);
-    await sdk.close();
+    if (sdk) await sdk.close();
     process.exit(0);
 });
 
