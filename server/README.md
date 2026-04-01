@@ -1,39 +1,35 @@
-# OTPZ iMessage Bridge Server
+# OTPZ Companion Server
 
-A local Node.js server that watches your iMessages for OTP codes and pushes them to the OTPZ Chrome extension in real time.
+A local Node.js server that watches your iMessages and SMS for OTP codes and pushes them to the OTPZ Chrome extension in real time over WebSocket.
 
 ## Requirements
 
 - **macOS** (iMessages are stored locally on macOS only)
 - **Node.js 18+** ([download](https://nodejs.org/))
-- **Full Disk Access** for Terminal (to read `~/Library/Messages/chat.db`)
-- **Messages in iCloud** enabled on your iPhone
+- **Full Disk Access** for your terminal app (required to read `~/Library/Messages/chat.db`)
+- **Messages in iCloud** enabled on your iPhone (so texts sync to your Mac)
 
 ## Quick Start
 
 ```bash
 cd server
 npm install
-node server.js
+npm start
 ```
 
-Or use the startup script:
-
-```bash
-./start.sh
-```
+> **Got a "Cannot find package" error?** You need to run `npm install` first — dependencies are not included in the repository.
 
 ## Granting Full Disk Access
 
 1. Open **System Settings → Privacy & Security → Full Disk Access**
 2. Click **"+"** and add your terminal app (Terminal, iTerm, Warp, etc.)
-3. Restart the server
+3. Restart the terminal and run the server again
 
 ## How It Works
 
-1. The server uses [imessage-kit](https://github.com/photon-hq/imessage-kit) to monitor `~/Library/Messages/chat.db` for new messages (polls every 2 seconds)
-2. When a new SMS/iMessage arrives, it runs OTP extraction regex to detect verification codes
-3. Detected OTPs are pushed to connected Chrome extension clients over WebSocket (`ws://127.0.0.1:7483`)
+1. The server polls Apple's `chat.db` SQLite database every 2 seconds using a **10-minute sliding window** — this ensures OTPs are never missed, even after your Mac wakes from sleep and syncs delayed iCloud messages
+2. When a new SMS/iMessage arrives, it runs OTP extraction to detect verification codes (4–8 digit numeric, 4–10 character alphanumeric)
+3. Detected OTPs are broadcast to connected Chrome extension clients over WebSocket (`ws://127.0.0.1:7483`)
 4. The extension displays iMessage OTPs alongside Gmail OTPs with a 💬 source badge
 
 ## Endpoints
@@ -41,13 +37,13 @@ Or use the startup script:
 | Endpoint | Description |
 |---|---|
 | `ws://127.0.0.1:7483` | WebSocket — real-time OTP push |
-| `GET http://127.0.0.1:7483/health` | Health check |
-| `GET http://127.0.0.1:7483/otps` | List active OTPs (for debugging) |
+| `GET /health` | Health check |
+| `GET /otps` | List active OTPs (useful for debugging) |
 
 ## Configuration
 
 Set the port via environment variable:
 
 ```bash
-OTPZ_PORT=8080 node server.js
+OTPZ_PORT=8080 npm start
 ```
