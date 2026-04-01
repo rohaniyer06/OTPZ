@@ -25,14 +25,22 @@ The extension has two OTP sources:
 git clone https://github.com/rohaniyer06/OTPZ.git
 ```
 
-### 2. Load the Extension
+### 2. Initialize the Manifest
+
+The repository includes an example manifest. You must copy it before Chrome can load the extension.
+
+```bash
+cp manifest.example.json manifest.json
+```
+
+### 3. Load the Extension
 
 1. Open `chrome://extensions` in Chrome
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked** → select the `OTPZ/` folder
 4. Copy your **Extension ID** from the card that appears
 
-### 3. Create a Google OAuth Client
+### 4. Create a Google OAuth Client
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or select an existing one)
@@ -42,23 +50,20 @@ git clone https://github.com/rohaniyer06/OTPZ.git
    - Add your Gmail address under **Test users**
 5. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
    - Application type: **Chrome extension**
-   - **Application ID** = the Extension ID from step 2
+   - **Application ID** = the Extension ID you copied in Step 3
    - Copy the generated **Client ID**
 
-### 4. Configure the Manifest
+### 5. Finalize the Manifest
 
-1. Copy `manifest.example.json` to `manifest.json`:
-   ```bash
-   cp manifest.example.json manifest.json
-   ```
-2. Open `manifest.json` and replace the `client_id` in the `oauth2` block:
+1. Open your new `manifest.json` file and replace the `client_id` string:
    ```json
    "oauth2": {
      "client_id": "YOUR_CLIENT_ID_HERE",
      "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
    }
    ```
-3. Back in `chrome://extensions`, **remove** the extension and **Load unpacked** again (Chrome caches the `oauth2` block on install)
+2. Save the file.
+3. Back in `chrome://extensions`, click the 🔁 **Refresh icon** on the OTPZ extension card (Chrome caches the OAuth block on install, so refreshing is required).
 
 ### 5. Use It
 
