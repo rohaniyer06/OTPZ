@@ -420,7 +420,8 @@ ul {
 }
 
 .autofill,
-.copy {
+.copy,
+.remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -434,6 +435,37 @@ ul {
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
+}
+
+/* Specific styling for the remove button */
+.remove {
+  padding: 8px 10px; /* slightly narrower since it has no text */
+  background: linear-gradient(to bottom, #f87171, var(--error-color));
+  color: white;
+  box-shadow:
+    0 3px 0px #b91c1c,
+    0 4px 10px rgba(239, 68, 68, 0.25);
+}
+
+.remove:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 0px #b91c1c,
+    0 6px 16px rgba(239, 68, 68, 0.3);
+}
+
+.remove:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0px #b91c1c,
+    0 1px 4px rgba(239, 68, 68, 0.2);
+}
+
+.remove:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 2px 0px #b91c1c;
 }
 
 /* Autofill — 3D green */
