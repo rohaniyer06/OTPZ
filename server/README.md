@@ -25,6 +25,15 @@ npm start
 2. Click **"+"** and add your terminal app (Terminal, iTerm, Warp, etc.)
 3. Restart the terminal and run the server again
 
+## Troubleshooting: SMS Not Syncing?
+
+If automated SMS codes (from heavy shortcode numbers like 93557) are appearing on your iPhone but never showing up in the extension or your Mac's Messages app:
+
+1. Open **Settings** on your iPhone
+2. Tap **Messages** → **Text Message Forwarding**
+3. Find your Mac in the list and toggle the switch to **ON (green)**
+*(If it's already on but not syncing, toggle it off, wait 5 seconds, and toggle it back on to force iCloud to re-authenticate.)*
+
 ## How It Works
 
 1. The server polls Apple's `chat.db` SQLite database every 2 seconds using a **10-minute sliding window** — this ensures OTPs are never missed, even after your Mac wakes from sleep and syncs delayed iCloud messages
